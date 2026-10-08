@@ -129,7 +129,7 @@ const fdate=x=>new Date(x+"T00:00:00").toLocaleDateString("en-US",{month:"short"
 const fmt=n=>n.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2});
 const NOW=new Date(),TODAY=iso(NOW),COL=["#bfe8b8","#f6d9a0","#b9dfe0","#efc9bd","#d8e6a3"];
 const NAV=[["today","Today & my dashboard"],["overview","Overview"],["tasks","Tasks"],["team","Team"],["calendar","Calendar"],["finances","Finances"],["announcements","Announcements"]];
-const ROLE={admin:"Admin",finance:"Finance",member:"Member"};
+const ROLE={admin:"Leader",finance:"Co-leader",member:"Member"};
 const D={users:[],tasks:[],transactions:[],payments:[],announcements:[]};
 let me=null,cur="overview",cm=new Date(NOW.getFullYear(),NOW.getMonth(),1),unsubs=[],pending="";
 const isAdmin=()=>me.role==="admin",canFin=()=>me.role==="admin"||me.role==="finance";
@@ -147,13 +147,16 @@ onAuthStateChanged(auth,async u=>{
   try{
     let s=await getDoc(doc(db,"users",u.uid));
     if(!s.exists()){ // first login: create the profile (max 7 members in total)
-      const name=(u.displayName||"").trim();
+      const name=(u.displayName||u.email.split("@")[0]).trim();
       try{
+        const c=await getDoc(doc(db,"meta","signups")),n=c.exists()?c.data().count:null;
+        if(typeof n!=="number"){pending="Setup problem: Firestore needs a document meta > signups with a number field called count.";await signOut(auth);return}
+        if(n>=7){pending="The team already has 7 members, so no more accounts can be created.";await signOut(auth);return}
         const b=writeBatch(db);
         b.set(doc(db,"users",u.uid),{name,role:"member"});
         b.update(doc(db,"meta","signups"),{count:increment(1)});
         await b.commit();
-      }catch(e){pending="Couldn't create your profile. The team may already have 7 members.";await signOut(auth);return}
+      }catch(e){pending="Couldn't create your profile ("+(e.code||e.message)+"). Check that the new Firestore rules are published.";await signOut(auth);return}
       s=await getDoc(doc(db,"users",u.uid));
     }
     me={uid:u.uid,...s.data()};
@@ -198,7 +201,7 @@ overview(){const open=D.tasks.filter(x=>!x.done),pct=D.tasks.length?Math.round((
   return `${isAdmin()?'<section class="hero"><button class="btn" data-go="tasks">+ Assign a task</button></section>':''}<div class="grid"><div class="card"><div class="lab">Progress</div><div class="stat">${pct}%</div><div class="bar"><i style="width:${pct}%"></i></div></div><div class="card"><div class="lab">Open tasks</div><div class="stat">${open.length}</div></div><div class="card"><div class="lab">Team members</div><div class="stat">${vis().length}</div></div></div><div class="card"><h3>Up next</h3>${taskList(sorted().filter(x=>!x.done).slice(0,3))}</div>`},
 today(){const d=sorted().filter(x=>x.start<=TODAY&&TODAY<=x.end),mine=sorted().filter(x=>x.assigneeUid===me.uid);
   return `<h2>Today & my dashboard</h2><div class="grid"><div class="card"><div class="lab">Due today</div><div class="stat">${d.filter(x=>!x.done).length}</div></div><div class="card"><div class="lab">My open tasks</div><div class="stat">${mine.filter(x=>!x.done).length}</div></div></div><div class="card"><h3>Happening today</h3>${taskList(d)}</div><div class="card"><h3>My tasks</h3>${taskList(mine)}</div>`},
-tasks(){return `<h2>Tasks</h2>${isAdmin()?`<div class="add"><input type="text" id="nt" placeholder="What needs to be done?" aria-label="Task name"><select id="nw" aria-label="Assign to">${vis().map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join("")}</select><label class="lab">Start <input type="date" id="ns" value="${TODAY}"></label><label class="lab">Deadline <input type="date" id="ne" value="${TODAY}"></label><button class="btn" id="addt">Assign task</button></div>`:'<div class="note">You can tick off tasks assigned to you. Only the admin can add or remove tasks.</div>'}<div class="card">${taskList(sorted())}</div>`},
+tasks(){return `<h2>Tasks</h2>${isAdmin()?`<div class="add"><input type="text" id="nt" placeholder="What needs to be done?" aria-label="Task name"><select id="nw" aria-label="Assign to">${vis().map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join("")}</select><label class="lab">Start <input type="date" id="ns" value="${TODAY}"></label><label class="lab">Deadline <input type="date" id="ne" value="${TODAY}"></label><button class="btn" id="addt">Assign task</button></div>`:'<div class="note">You can tick off tasks assigned to you. Only the Leader can add or remove tasks.</div>'}<div class="card">${taskList(sorted())}</div>`},
 team(){return `<h2>Team</h2><div class="grid">${vis().map(u=>{const n=D.tasks.filter(x=>x.assigneeUid===u.id&&!x.done).length;return `<div class="card"><div class="av" style="background:var(--btn);color:#fff;margin-bottom:10px">${esc((u.name||"?")[0])}</div><b>${esc(u.name)}</b><div class="lab">${ROLE[u.role]||esc(u.role)}</div><div class="lab" style="margin-top:8px">${n} open task${n===1?'':'s'}</div></div>`}).join("")}</div>`},
 calendar(){const y=cm.getFullYear(),mo=cm.getMonth(),n=new Date(y,mo+1,0).getDate(),off=cm.getDay(),first=iso(cm),last=y+"-"+p2(mo+1)+"-"+p2(n);
   const L=sorted().filter(x=>x.start<=last&&x.end>=first);
@@ -216,7 +219,7 @@ finances(){const tot=D.transactions.reduce((s,x)=>s+x.amt,0),col=D.payments.redu
   const rm=(c,id)=>f?`<button class="link" data-del="${c}:${id}">Remove</button>`:'';
   const prow=byDate(D.payments).map(x=>`<div class="item"><span class="tag" style="width:90px">${esc(x.date)}</span><span class="t">${esc(x.who)}</span><b>₱${fmt(x.amt)}</b>${rm('payments',x.id)}</div>`).join("");
   const trow=byDate(D.transactions).map(x=>`<div class="item"><span class="tag" style="width:90px">${esc(x.date)}</span><span class="t">${esc(x.use)}</span><b>₱${fmt(x.amt)}</b>${rm('transactions',x.id)}</div>`).join("");
-  return `<h2>Finances</h2>${f?'':'<div class="note">View only. Only the admin and finance officer can edit this page.</div>'}<div class="grid"><div class="card"><div class="lab">Money on hand</div><div class="stat" style="color:${hand<0?'#d64545':'var(--ok)'}">₱${fmt(hand)}</div></div><div class="card"><div class="lab">Total collected</div><div class="stat">₱${fmt(col)}</div></div><div class="card"><div class="lab">Total spent</div><div class="stat">₱${fmt(tot)}</div></div></div>
+  return `<h2>Finances</h2>${f?'':'<div class="note">View only. Only the Leader and Co-leader can edit this page.</div>'}<div class="grid"><div class="card"><div class="lab">Money on hand</div><div class="stat" style="color:${hand<0?'#d64545':'var(--ok)'}">₱${fmt(hand)}</div></div><div class="card"><div class="lab">Total collected</div><div class="stat">₱${fmt(col)}</div></div><div class="card"><div class="lab">Total spent</div><div class="stat">₱${fmt(tot)}</div></div></div>
   <div class="card"><h3>Team payments</h3>${f?`<div class="add"><input type="text" id="pw2" list="mem" placeholder="Who paid?" aria-label="Member name"><datalist id="mem">${people().map(n=>`<option value="${esc(n)}">`).join("")}</datalist><input type="number" id="pa" min="0" step="0.01" placeholder="Amount (₱)" aria-label="Amount paid"><input type="date" id="pd" value="${TODAY}" aria-label="Date paid"><button class="btn" id="addp">Record payment</button></div>`:''}${prow}</div>
   ${f?`<h3 style="margin:0 0 10px">Add expense</h3><div class="add"><input type="number" id="fa" min="0" step="0.01" placeholder="Amount (₱)" aria-label="Amount"><input type="date" id="fd2" value="${TODAY}" aria-label="Date"><input type="text" id="fu" placeholder="What was it used for?" aria-label="Purpose"><button class="btn" id="addf">Add transaction</button></div>`:''}
   <div class="card"><h3>Financial history</h3>${trow||'<p class="lab">No transactions yet.</p>'}</div>`},
