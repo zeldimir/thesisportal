@@ -82,12 +82,15 @@ aside nav{display:flex;gap:4px}nav button{white-space:nowrap;width:auto;margin:0
 <div class="login" id="login" hidden>
   <div class="lbox">
     <h1>Thesis Command Center</h1>
-    <p>Sign in with the email and password given to you by your team leader.</p>
+    <p id="lsub">Sign in with your team email and password.</p>
+    <input type="text" id="nm" placeholder="Full name (e.g. Juan Dela Cruz)" autocomplete="name" aria-label="Full name" hidden>
     <input type="email" id="em" placeholder="Email" autocomplete="username" aria-label="Email">
     <input type="password" id="pw" placeholder="Password" autocomplete="current-password" aria-label="Password">
+    <input type="password" id="pw2c" placeholder="Confirm password" autocomplete="new-password" aria-label="Confirm password" hidden>
     <div class="err" id="err" role="alert"></div>
     <button class="btn" id="signin">Sign in</button>
     <p style="margin:14px 0 0;text-align:center"><button class="link" id="reset">Forgot password?</button></p>
+    <p style="margin:8px 0 0;text-align:center"><button class="link" id="swap">Create an account</button></p>
   </div>
 </div>
 <div class="app" id="app" hidden>
@@ -106,8 +109,8 @@ aside nav{display:flex;gap:4px}nav button{white-space:nowrap;width:auto;margin:0
 
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut,sendPasswordResetEmail} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getFirestore,collection,doc,getDoc,addDoc,updateDoc,deleteDoc,onSnapshot,serverTimestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,updateProfile,sendEmailVerification,signOut,sendPasswordResetEmail} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,collection,doc,getDoc,writeBatch,increment,addDoc,updateDoc,deleteDoc,onSnapshot,serverTimestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyC0irEf_H6BnlsSe5aC9U3ES1kkwTaPS_Y",
@@ -133,12 +136,26 @@ const isAdmin=()=>me.role==="admin",canFin=()=>me.role==="admin"||me.role==="fin
 
 /* ---------- auth ---------- */
 const showLogin=m=>{$("app").hidden=true;$("login").hidden=false;$("err").textContent=m||""};
+let mode="in",signingUp=false;
 onAuthStateChanged(auth,async u=>{
+  if(signingUp)return;
   unsubs.forEach(f=>f());unsubs=[];me=null;
   if(!u){showLogin(pending);pending="";return}
+  if(!u.emailVerified){
+    try{await sendEmailVerification(u)}catch(e){}
+    pending="Please verify your email first. We sent a link to "+u.email+". Click it, then sign in again.";await signOut(auth);return}
   try{
-    const s=await getDoc(doc(db,"users",u.uid));
-    if(!s.exists()){pending="Your account isn't set up yet. Ask your team leader.";await signOut(auth);return}
+    let s=await getDoc(doc(db,"users",u.uid));
+    if(!s.exists()){ // first login: create the profile (max 7 members in total)
+      const name=(u.displayName||"").trim();
+      try{
+        const b=writeBatch(db);
+        b.set(doc(db,"users",u.uid),{name,role:"member"});
+        b.update(doc(db,"meta","signups"),{count:increment(1)});
+        await b.commit();
+      }catch(e){pending="Couldn't create your profile. The team may already have 7 members.";await signOut(auth);return}
+      s=await getDoc(doc(db,"users",u.uid));
+    }
     me={uid:u.uid,...s.data()};
   }catch(e){pending="Could not load your profile.";await signOut(auth);return}
   $("login").hidden=true;$("app").hidden=false;
@@ -146,10 +163,22 @@ onAuthStateChanged(auth,async u=>{
   Object.keys(D).forEach(k=>unsubs.push(onSnapshot(collection(db,k),s=>{D[k]=s.docs.map(d=>({id:d.id,...d.data()}));refresh()},e=>console.error(k,e))));
   render();
 });
+const setMode=m=>{mode=m;const up=m==="up";$("pw2c").hidden=!up;$("nm").hidden=!up;$("reset").hidden=up;$("signin").textContent=up?"Create account":"Sign in";
+  $("swap").textContent=up?"Already have an account? Sign in":"Create an account";
+  $("lsub").textContent=up?"Enter your name, email, and a password (6+ characters).":"Sign in with your team email and password.";$("err").textContent=""};
+$("swap").onclick=()=>setMode(mode==="in"?"up":"in");
 $("signin").onclick=async()=>{
-  $("err").textContent="";
-  try{await signInWithEmailAndPassword(auth,$("em").value.trim(),$("pw").value)}
-  catch(e){$("err").textContent="Wrong email or password."}
+  const err=m=>$("err").textContent=m,em=$("em").value.trim().toLowerCase(),pw=$("pw").value;err("");
+  if(mode==="in"){try{await signInWithEmailAndPassword(auth,em,pw)}catch(e){err("Wrong email or password.")}return}
+  const nm=$("nm").value.trim();
+  if(!nm){err("Enter your full name.");return}
+  if(!em||pw.length<6){err("Enter your email and a password of at least 6 characters.");return}
+  if(pw!==$("pw2c").value){err("Passwords don't match.");return}
+  signingUp=true;
+  try{const c=await createUserWithEmailAndPassword(auth,em,pw);await updateProfile(c.user,{displayName:nm});await sendEmailVerification(c.user);
+    pending="Account created. We sent a verification link to "+em+". Click it (check spam too), then sign in here."}
+  catch(e){signingUp=false;err(e.code==="auth/email-already-in-use"?"That email already has an account. Sign in instead.":e.code==="auth/invalid-email"?"That email address isn't valid.":"Could not create the account.");return}
+  signingUp=false;setMode("in");await signOut(auth);
 };
 $("reset").onclick=async()=>{
   const m=$("em").value.trim();if(!m){$("err").textContent="Type your email first.";return}
@@ -162,15 +191,15 @@ const sorted=()=>[...D.tasks].sort((a,b)=>a.start.localeCompare(b.start));
 const taskRow=x=>{const can=isAdmin()||x.assigneeUid===me.uid,late=!x.done&&x.end<TODAY;
   return `<div class="item${x.done?' done':''}"><input type="checkbox" data-tid="${x.id}" ${x.done?'checked':''} ${can?'':'disabled'} aria-label="Mark done"><span class="t">${esc(x.t)}</span><span class="tag${late?' late':''}">${esc(x.who)} · ${fdate(x.start)} – ${fdate(x.end)}</span>${isAdmin()?`<button class="link" data-del="tasks:${x.id}">Remove</button>`:''}</div>`};
 const taskList=l=>l.length?l.map(taskRow).join(""):'<p class="lab">Nothing here yet.</p>';
-const people=()=>D.users.map(u=>u.name).sort();
+const vis=()=>D.users.filter(u=>!u.hidden),people=()=>vis().map(u=>u.name).sort();
 
 const V={
 overview(){const open=D.tasks.filter(x=>!x.done),pct=D.tasks.length?Math.round((D.tasks.length-open.length)/D.tasks.length*100):0;
-  return `${isAdmin()?'<section class="hero"><button class="btn" data-go="tasks">+ Assign a task</button></section>':''}<div class="grid"><div class="card"><div class="lab">Progress</div><div class="stat">${pct}%</div><div class="bar"><i style="width:${pct}%"></i></div></div><div class="card"><div class="lab">Open tasks</div><div class="stat">${open.length}</div></div><div class="card"><div class="lab">Team members</div><div class="stat">${D.users.length}</div></div></div><div class="card"><h3>Up next</h3>${taskList(sorted().filter(x=>!x.done).slice(0,3))}</div>`},
+  return `${isAdmin()?'<section class="hero"><button class="btn" data-go="tasks">+ Assign a task</button></section>':''}<div class="grid"><div class="card"><div class="lab">Progress</div><div class="stat">${pct}%</div><div class="bar"><i style="width:${pct}%"></i></div></div><div class="card"><div class="lab">Open tasks</div><div class="stat">${open.length}</div></div><div class="card"><div class="lab">Team members</div><div class="stat">${vis().length}</div></div></div><div class="card"><h3>Up next</h3>${taskList(sorted().filter(x=>!x.done).slice(0,3))}</div>`},
 today(){const d=sorted().filter(x=>x.start<=TODAY&&TODAY<=x.end),mine=sorted().filter(x=>x.assigneeUid===me.uid);
   return `<h2>Today & my dashboard</h2><div class="grid"><div class="card"><div class="lab">Due today</div><div class="stat">${d.filter(x=>!x.done).length}</div></div><div class="card"><div class="lab">My open tasks</div><div class="stat">${mine.filter(x=>!x.done).length}</div></div></div><div class="card"><h3>Happening today</h3>${taskList(d)}</div><div class="card"><h3>My tasks</h3>${taskList(mine)}</div>`},
-tasks(){return `<h2>Tasks</h2>${isAdmin()?`<div class="add"><input type="text" id="nt" placeholder="What needs to be done?" aria-label="Task name"><select id="nw" aria-label="Assign to">${D.users.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join("")}</select><label class="lab">Start <input type="date" id="ns" value="${TODAY}"></label><label class="lab">Deadline <input type="date" id="ne" value="${TODAY}"></label><button class="btn" id="addt">Assign task</button></div>`:'<div class="note">You can tick off tasks assigned to you. Only the admin can add or remove tasks.</div>'}<div class="card">${taskList(sorted())}</div>`},
-team(){return `<h2>Team</h2><div class="grid">${D.users.map(u=>{const n=D.tasks.filter(x=>x.assigneeUid===u.id&&!x.done).length;return `<div class="card"><div class="av" style="background:var(--btn);color:#fff;margin-bottom:10px">${esc((u.name||"?")[0])}</div><b>${esc(u.name)}</b><div class="lab">${ROLE[u.role]||esc(u.role)}</div><div class="lab" style="margin-top:8px">${n} open task${n===1?'':'s'}</div></div>`}).join("")}</div>`},
+tasks(){return `<h2>Tasks</h2>${isAdmin()?`<div class="add"><input type="text" id="nt" placeholder="What needs to be done?" aria-label="Task name"><select id="nw" aria-label="Assign to">${vis().map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join("")}</select><label class="lab">Start <input type="date" id="ns" value="${TODAY}"></label><label class="lab">Deadline <input type="date" id="ne" value="${TODAY}"></label><button class="btn" id="addt">Assign task</button></div>`:'<div class="note">You can tick off tasks assigned to you. Only the admin can add or remove tasks.</div>'}<div class="card">${taskList(sorted())}</div>`},
+team(){return `<h2>Team</h2><div class="grid">${vis().map(u=>{const n=D.tasks.filter(x=>x.assigneeUid===u.id&&!x.done).length;return `<div class="card"><div class="av" style="background:var(--btn);color:#fff;margin-bottom:10px">${esc((u.name||"?")[0])}</div><b>${esc(u.name)}</b><div class="lab">${ROLE[u.role]||esc(u.role)}</div><div class="lab" style="margin-top:8px">${n} open task${n===1?'':'s'}</div></div>`}).join("")}</div>`},
 calendar(){const y=cm.getFullYear(),mo=cm.getMonth(),n=new Date(y,mo+1,0).getDate(),off=cm.getDay(),first=iso(cm),last=y+"-"+p2(mo+1)+"-"+p2(n);
   const L=sorted().filter(x=>x.start<=last&&x.end>=first);
   let h=`<div class="row" style="margin-bottom:14px"><button class="tb" data-m="-1" aria-label="Previous month">‹</button><h2 style="margin:0;min-width:170px;text-align:center">${cm.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</h2><button class="tb" data-m="1" aria-label="Next month">›</button></div><div class="cal">`+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(w=>`<div class="h">${w}</div>`).join("");
