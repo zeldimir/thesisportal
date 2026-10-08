@@ -18,7 +18,7 @@ aside{width:250px;flex:none;background:linear-gradient(180deg,var(--side),var(--
 .brand b{font-family:"Space Mono",monospace;font-size:14px;letter-spacing:.06em;display:block}
 .brand small{font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.08em;opacity:.8}
 .team{padding:10px 6px 16px;border-bottom:1px solid #ffffff1f;margin-bottom:14px}
-.team b{display:block;font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.05em}
+.team b{display:block;font-family:Inter,system-ui,sans-serif;font-weight:600;font-size:11.5px;line-height:1.45;margin-bottom:4px}
 .team span{font-size:11px;opacity:.7}
 .ws{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.12em;opacity:.55;padding:0 8px 8px}
 nav button{all:unset;box-sizing:border-box;display:block;width:100%;padding:10px 12px;border-radius:10px;cursor:pointer;font-size:13px;margin-bottom:3px;color:#dcefe2}
@@ -93,7 +93,7 @@ aside nav{display:flex;gap:4px}nav button{white-space:nowrap;width:auto;margin:0
 <div class="app" id="app" hidden>
   <aside>
     <div class="brand"><div class="logo">✦</div><div><b>THESIS</b><small>COMMAND CENTER</small></div></div>
-    <div class="team"><b>SAMPLE THESIS TITLE</b><span>Pampanga State University</span></div>
+    <div class="team"><b>Morpho-Histological Effects of Simulated Cyanobacterial (<i>Microcystis aeruginosa</i>) Bloom Condition on Giant Freshwater Prawn (<i>Macrobrachium rosenbergii</i>)</b><span>Pampanga State University</span></div>
     <div class="ws">WORKSPACE</div>
     <nav id="nav" aria-label="Workspace"></nav>
     <div class="me"><div class="av" id="av"></div><div><b id="mn"></b><small id="mr"></small></div><button class="out" id="out">Sign out</button></div>
@@ -182,15 +182,13 @@ calendar(){const y=cm.getFullYear(),mo=cm.getMonth(),n=new Date(y,mo+1,0).getDat
       bars+=`<span class="bar2" title="${esc(x.t)} (${fdate(x.start)} – ${fdate(x.end)})" style="background:${COL[D.tasks.indexOf(x)%5]};margin-left:${cl?0:-6}px;margin-right:${cr?0:-10}px;border-radius:${r(cl)} ${r(cr)} ${r(cr)} ${r(cl)};opacity:${x.done?.55:1}">${cl?esc(x.t):'&nbsp;'}</span>`}
     h+=`<div${c===TODAY?' class="today"':''}><b>${d}</b>${bars}</div>`}
   return h+'</div>'},
-finances(){const tot=D.transactions.reduce((s,x)=>s+x.amt,0),col=D.payments.reduce((s,x)=>s+x.amt,0),hand=col-tot,who={};
-  people().forEach(n=>who[n]=0);D.payments.forEach(p=>who[p.who]=(who[p.who]||0)+p.amt);
-  const chips=Object.keys(who).map(n=>{const ok=who[n]>0;return `<span class="chip ${ok?'ok':''}">${esc(n)} · ${ok?'Paid ₱'+fmt(who[n]):'Not yet paid'}</span>`}).join("");
+finances(){const tot=D.transactions.reduce((s,x)=>s+x.amt,0),col=D.payments.reduce((s,x)=>s+x.amt,0),hand=col-tot;
   const f=canFin(),byDate=l=>[...l].sort((a,b)=>b.date.localeCompare(a.date));
   const rm=(c,id)=>f?`<button class="link" data-del="${c}:${id}">Remove</button>`:'';
   const prow=byDate(D.payments).map(x=>`<div class="item"><span class="tag" style="width:90px">${esc(x.date)}</span><span class="t">${esc(x.who)}</span><b>₱${fmt(x.amt)}</b>${rm('payments',x.id)}</div>`).join("");
   const trow=byDate(D.transactions).map(x=>`<div class="item"><span class="tag" style="width:90px">${esc(x.date)}</span><span class="t">${esc(x.use)}</span><b>₱${fmt(x.amt)}</b>${rm('transactions',x.id)}</div>`).join("");
   return `<h2>Finances</h2>${f?'':'<div class="note">View only. Only the admin and finance officer can edit this page.</div>'}<div class="grid"><div class="card"><div class="lab">Money on hand</div><div class="stat" style="color:${hand<0?'#d64545':'var(--ok)'}">₱${fmt(hand)}</div></div><div class="card"><div class="lab">Total collected</div><div class="stat">₱${fmt(col)}</div></div><div class="card"><div class="lab">Total spent</div><div class="stat">₱${fmt(tot)}</div></div></div>
-  <div class="card"><h3>Team payments</h3><div class="chips">${chips}</div>${f?`<div class="add"><input type="text" id="pw2" list="mem" placeholder="Who paid?" aria-label="Member name"><datalist id="mem">${people().map(n=>`<option value="${esc(n)}">`).join("")}</datalist><input type="number" id="pa" min="0" step="0.01" placeholder="Amount (₱)" aria-label="Amount paid"><input type="date" id="pd" value="${TODAY}" aria-label="Date paid"><button class="btn" id="addp">Record payment</button></div>`:''}${prow}</div>
+  <div class="card"><h3>Team payments</h3>${f?`<div class="add"><input type="text" id="pw2" list="mem" placeholder="Who paid?" aria-label="Member name"><datalist id="mem">${people().map(n=>`<option value="${esc(n)}">`).join("")}</datalist><input type="number" id="pa" min="0" step="0.01" placeholder="Amount (₱)" aria-label="Amount paid"><input type="date" id="pd" value="${TODAY}" aria-label="Date paid"><button class="btn" id="addp">Record payment</button></div>`:''}${prow}</div>
   ${f?`<h3 style="margin:0 0 10px">Add expense</h3><div class="add"><input type="number" id="fa" min="0" step="0.01" placeholder="Amount (₱)" aria-label="Amount"><input type="date" id="fd2" value="${TODAY}" aria-label="Date"><input type="text" id="fu" placeholder="What was it used for?" aria-label="Purpose"><button class="btn" id="addf">Add transaction</button></div>`:''}
   <div class="card"><h3>Financial history</h3>${trow||'<p class="lab">No transactions yet.</p>'}</div>`},
 announcements(){const l=[...D.announcements].sort((a,b)=>((b.ts&&b.ts.seconds)||9e9)-((a.ts&&a.ts.seconds)||9e9));
