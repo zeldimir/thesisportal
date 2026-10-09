@@ -62,6 +62,7 @@ h2{margin:0 0 16px;font-size:22px}
 .cal .h{min-height:0;background:none;border:0;color:var(--mute);text-align:center}
 .cal .today{border-color:var(--btn);box-shadow:inset 0 0 0 1px var(--btn)}
 .bar2{display:block;height:17px;line-height:17px;margin-top:3px;padding:0 6px;font-size:10px;color:#17301f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.evt{display:block;margin-top:3px;padding:1px 6px;font-size:10px;background:#f6d9a0;color:#17301f;border-left:3px solid #b7791f;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .gap{display:block;height:17px;margin-top:3px}
 .login{min-height:100%;display:grid;place-items:center;padding:20px;background:linear-gradient(160deg,var(--side),var(--side2))}
 .lbox{width:min(380px,100%);background:var(--card);border-radius:16px;padding:28px}
@@ -130,7 +131,7 @@ const fmt=n=>n.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDi
 const NOW=new Date(),TODAY=iso(NOW),COL=["#bfe8b8","#f6d9a0","#b9dfe0","#efc9bd","#d8e6a3"];
 const NAV=[["today","Today & my dashboard"],["overview","Overview"],["tasks","Tasks"],["team","Team"],["calendar","Calendar"],["finances","Finances"],["announcements","Announcements"]];
 const ROLE={admin:"Leader",finance:"Co-leader",member:"Member"};
-const D={users:[],tasks:[],transactions:[],payments:[],announcements:[]};
+const D={users:[],events:[],tasks:[],transactions:[],payments:[],announcements:[]};
 let me=null,cur="overview",cm=new Date(NOW.getFullYear(),NOW.getMonth(),1),unsubs=[],pending="";
 const isAdmin=()=>me.role==="admin",canFin=()=>me.role==="admin"||me.role==="finance";
 
@@ -205,15 +206,17 @@ tasks(){return `<h2>Tasks</h2>${isAdmin()?`<div class="add"><input type="text" i
 team(){return `<h2>Team</h2><div class="grid">${vis().map(u=>{const n=D.tasks.filter(x=>x.assigneeUid===u.id&&!x.done).length;return `<div class="card"><div class="av" style="background:var(--btn);color:#fff;margin-bottom:10px">${esc((u.name||"?")[0])}</div><b>${esc(u.name)}</b><div class="lab">${ROLE[u.role]||esc(u.role)}</div><div class="lab" style="margin-top:8px">${n} open task${n===1?'':'s'}</div></div>`}).join("")}</div>`},
 calendar(){const y=cm.getFullYear(),mo=cm.getMonth(),n=new Date(y,mo+1,0).getDate(),off=cm.getDay(),first=iso(cm),last=y+"-"+p2(mo+1)+"-"+p2(n);
   const L=sorted().filter(x=>x.start<=last&&x.end>=first);
-  let h=`<div class="row" style="margin-bottom:14px"><button class="tb" data-m="-1" aria-label="Previous month">‹</button><h2 style="margin:0;min-width:170px;text-align:center">${cm.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</h2><button class="tb" data-m="1" aria-label="Next month">›</button></div><div class="cal">`+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(w=>`<div class="h">${w}</div>`).join("");
+  let h=(isAdmin()?`<div class="add"><input type="date" id="ed" value="${TODAY}" aria-label="Date"><input type="text" id="et" placeholder="Event or important date " aria-label="Event"><button class="btn" id="adde">Add date</button></div>`:"")+`<div class="row" style="margin-bottom:14px"><button class="tb" data-m="-1" aria-label="Previous month">‹</button><h2 style="margin:0;min-width:170px;text-align:center">${cm.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</h2><button class="tb" data-m="1" aria-label="Next month">›</button></div><div class="cal">`+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(w=>`<div class="h">${w}</div>`).join("");
   for(let i=0;i<off;i++)h+='<div style="opacity:.3"></div>';
   for(let d=1;d<=n;d++){const c=y+"-"+p2(mo+1)+"-"+p2(d),cw=(off+d-1)%7,act=[];let mx=-1;
     L.forEach((x,k)=>{if(x.start<=c&&x.end>=c){act[k]=x;mx=k}});
     let bars="";for(let k=0;k<=mx;k++){const x=act[k];if(!x){bars+='<span class="gap"></span>';continue}
       const cl=c===x.start||cw===0,cr=c===x.end||cw===6,r=v=>v?"6px":"0";
       bars+=`<span class="bar2" title="${esc(x.t)} (${fdate(x.start)} – ${fdate(x.end)})" style="background:${COL[D.tasks.indexOf(x)%5]};margin-left:${cl?0:-6}px;margin-right:${cr?0:-10}px;border-radius:${r(cl)} ${r(cr)} ${r(cr)} ${r(cl)};opacity:${x.done?.55:1}">${cl?esc(x.t):'&nbsp;'}</span>`}
-    h+=`<div${c===TODAY?' class="today"':''}><b>${d}</b>${bars}</div>`}
-  return h+'</div>'},
+    const evs=D.events.filter(e=>e.date===c).map(e=>`<span class="evt" title="${esc(e.t)}">${esc(e.t)}</span>`).join("");
+    h+=`<div${c===TODAY?' class="today"':''}><b>${d}</b>${bars}${evs}</div>`}
+  const mev=D.events.filter(e=>e.date>=first&&e.date<=last).sort((a,b)=>a.date.localeCompare(b.date));
+  return h+`</div><div class="card" style="margin-top:14px"><h3>Dates this month</h3>${mev.map(e=>`<div class="item"><span class="tag" style="width:60px">${fdate(e.date)}</span><span class="t">${esc(e.t)}</span>${isAdmin()?`<button class="link" data-del="events:${e.id}">Remove</button>`:''}</div>`).join("")||'<p class="lab">No special dates this month.</p>'}</div>`},
 finances(){const tot=D.transactions.reduce((s,x)=>s+x.amt,0),col=D.payments.reduce((s,x)=>s+x.amt,0),hand=col-tot;
   const f=canFin(),byDate=l=>[...l].sort((a,b)=>b.date.localeCompare(a.date));
   const rm=(c,id)=>f?`<button class="link" data-del="${c}:${id}">Remove</button>`:'';
@@ -251,6 +254,7 @@ document.addEventListener("click",e=>{
     if(n&&s&&en&&en>=s&&u){run(addDoc(collection(db,"tasks"),{t:n,who:u.name,assigneeUid:u.id,start:s,end:en,done:false}))}}
   if(id==="addf"){const a=parseFloat($("fa").value),d=v("fd2"),u=v("fu");if(!isNaN(a)&&a>=0&&d&&u)run(addDoc(collection(db,"transactions"),{amt:a,date:d,use:u}))}
   if(id==="addp"){const a=parseFloat($("pa").value),d=v("pd"),w=v("pw2");if(!isNaN(a)&&a>=0&&d&&w)run(addDoc(collection(db,"payments"),{who:w,amt:a,date:d}))}
+  if(id==="adde"){const d=v("ed"),t=v("et");if(d&&t)run(addDoc(collection(db,"events"),{date:d,t}))}
   if(id==="posta"){const a=v("an");if(a)run(addDoc(collection(db,"announcements"),{t:a,a:me.name,ts:serverTimestamp()}))}
 });
 document.addEventListener("change",e=>{const i=e.target.dataset&&e.target.dataset.tid;if(i)run(updateDoc(doc(db,"tasks",i),{done:e.target.checked}))});
